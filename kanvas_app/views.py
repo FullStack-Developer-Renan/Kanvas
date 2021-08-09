@@ -2,7 +2,7 @@ from re import sub
 from django.contrib.auth.models import User
 import ipdb
 from rest_framework.fields import NullBooleanField
-from kanvas_app.permissions import CoursePermission, CourseSuperUserPermission
+from kanvas_app.permissions import CoursePermission, CourseStudentPermission, CourseSuperUserPermission
 from kanvas_app.models import Activity, Course, Submission
 from rest_framework import serializers
 from rest_framework.views import APIView
@@ -16,7 +16,7 @@ from ipdb import set_trace
 class CourseView(APIView):
 
     authentication_classes = [TokenAuthentication]
-    permission_classes = [CoursePermission]
+    permission_classes = [CourseSuperUserPermission]
     
     def post(self, request):
         serializer = CourseSerializer(data=request.data)
@@ -60,13 +60,20 @@ class CourseDetailView(APIView):
 
         user_ids = request.data.pop('user_ids')
 
+        if type(user_ids) is not list:
+            return Response({"errors": "invalid user_id list"}, status=status.HTTP_400_BAD_REQUEST)
+
         for user_id in user_ids:
             user = User.objects.filter(id=user_id).first()
-            if not user:
+            
+            if not user :
                 return Response({"errors": "invalid user_id list"}, status=status.HTTP_404_NOT_FOUND)
+        
+        for user_id in user_ids:
+            user = User.objects.filter(id=user_id).first()
+            
             if user.is_staff == True or user.is_superuser == True:
                 return Response({"errors": "Only students can be enrolled in the course."}, status=status.HTTP_400_BAD_REQUEST)
-
         course.users.set(user_ids)
 
         serializer = CourseDetailSerializer(course)
@@ -108,25 +115,42 @@ class ActivityView(APIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
         validated_data = serializer.validated_data
-        
-        activity = Activity.objects.get_or_create(**validated_data)[0]
 
-        self.check_object_permissions(request, activity)     
-                 
-        serializer = ActivitySerializer(activity)
+        activity1 = Activity.objects.filter(title=request.data["title"]).first()
 
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        activity2 = Activity.objects.filter(title=request.data["title"])
+
+        if activity1 != None:
+
+            self.check_object_permissions(request, activity1)   
+
+            activity2.update(**serializer.validated_data)  
+                    
+            serializer = ActivitySerializer(activity2.first())
+
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        else:
+            activity = Activity.objects.get_or_create(**validated_data)[0]
+
+            self.check_object_permissions(request, activity)     
+                    
+            serializer = ActivitySerializer(activity)
+
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     def get(self, request):    
         activities = Activity.objects.all()
-        
+
+        self.check_object_permissions(request, activities)  
+
         serialized = ActivitySerializer(activities, many=True)
+
         return Response(serialized.data)
 
 class ActivityDetailView(APIView):
 
     authentication_classes = [TokenAuthentication]
-    permission_classes = [CoursePermission]
+    permission_classes = [CourseStudentPermission]
 
     def post(self, request, activity_id=''):
 
@@ -137,14 +161,13 @@ class ActivityDetailView(APIView):
         
         validated_data = serializer.validated_data
 
-        if request.user.is_superuser == False and request.user.is_staff == False:
-            submission = Submission.objects.get_or_create(grade=None, repo=serializer["repo"].value, user=request.user, activity=Activity.objects.filter(id=activity_id).first())[0]
-        else:
-            submission = Submission.objects.get_or_create(grade=serializer["grade"].value, repo=serializer["repo"].value, user=request.user, activity=Activity.objects.filter(id=activity_id).first())[0]
+        submission = Submission.objects.create(grade=None, repo=serializer["repo"].value, user=request.user, activity=Activity.objects.filter(id=activity_id).first())
+
+        self.check_object_permissions(request, submission)   
 
         serializer = SubmissionSerializer(submission)
         
-        return Response(dict(serializer.data, **Submission.user_serializer(submission), **Submission.activity_serializer(submission)))
+        return Response(serializer.data,status=status.HTTP_201_CREATED)
     
     
     
@@ -172,7 +195,7 @@ class SubmissionView(APIView):
 
         serializer = SubmissionSerializer(sub)
 
-        return Response(dict(serializer.data, **Submission.user_serializer(sub), **Submission.activity_serializer(sub)))
+        return Response(serializer.data)
     
     def get(self, request):    
 
@@ -182,17 +205,7 @@ class SubmissionView(APIView):
             
             serialized = SubmissionSerializer(submissions, many=True)
 
-            for elem in serialized.data:
-                for key, value in elem.items():
-                    if key == 'user':
-                        elem[key] = value['id']
-                    if key == 'activity':
-                        elem[key] = value['id']
-
-            y = []
-            y.append(serialized.data)
-
-            return Response(y)
+            return Response(serialized.data)
 
         else:
 
@@ -200,14 +213,4 @@ class SubmissionView(APIView):
             
             serialized = SubmissionSerializer(submissions, many=True)
 
-            for elem in serialized.data:
-                for key, value in elem.items():
-                    if key == 'user':
-                        elem[key] = value['id']
-                    if key == 'activity':
-                        elem[key] = value['id']
-
-            y = []
-            y.append(serialized.data)
-
-            return Response(y)
+            return Response(serialized.data)

@@ -9,3 +9,7 @@ class CoursePermission(BasePermission):
 class CourseSuperUserPermission(BasePermission):
     def has_object_permission(self, request, view, obj):
         return request.user.is_superuser 
+
+class CourseStudentPermission(BasePermission):
+    def has_object_permission(self, request, view, obj):
+        return not request.user.is_superuser and not request.user.is_staff
