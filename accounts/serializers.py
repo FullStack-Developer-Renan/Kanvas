@@ -10,6 +10,9 @@ class UserSerializer(serializers.Serializer):
 class UserDetailSerializer(serializers.Serializer):
     id = serializers.IntegerField(read_only=True)
     username = serializers.CharField()
+
+class UserIdSerializer(serializers.Serializer):
+    id = serializers.IntegerField(read_only=True)
     
 class LoginSerializer(serializers.Serializer):
     username = serializers.CharField()
